@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServer } from "@/lib/supabase/server"
+import { checkGoogleRank } from "@/lib/seo/serp-scraper"
 
 export async function GET() {
   try {
@@ -37,17 +38,12 @@ export async function POST(request: NextRequest) {
     const { domain, keyword, location, city, country, device } = await request.json()
     const supabase = await getSupabaseServer()
 
-    // In a real implementation, you would:
-    // 1. Use Google Custom Search API with location parameter
-    // 2. Use a SERP API (SerpApi, DataForSEO, etc.) that supports city-level queries
-    // 3. Use a proxy in the target city to simulate local searches
+    // REAL SERP scraping - checks actual Google rankings!
+    // Note: This scrapes Google directly - use responsibly
+    // Google may block excessive requests
+    const rankResult = await checkGoogleRank(keyword, domain, country || 'IN', city)
     
-    // For now, we simulate a position (replace with real SERP API call)
-    // Real APIs use geolocation parameters like:
-    // - Google: gl (country), uule (encoded location)
-    // - SerpApi: location parameter accepts city names
-    
-    const position = Math.floor(Math.random() * 100) + 1
+    const position = rankResult.position // null if not found in top 100
 
     const { data, error } = await supabase.from("rank_tracking").insert({
       domain,
@@ -64,6 +60,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       position,
+      url: rankResult.url,
+      topResults: rankResult.topResults.slice(0, 5), // Top 5 competitors
+      checkedAt: rankResult.checkedAt,
       data: data?.[0] 
     })
   } catch (error) {

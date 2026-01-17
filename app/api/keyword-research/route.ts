@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServer } from "@/lib/supabase/server"
+import { getGoogleTrends, estimateVolumeFromTrend } from "@/lib/seo/google-trends"
 
 /**
  * Get Google Autocomplete suggestions for a keyword
@@ -86,8 +87,11 @@ function generateQuestions(keyword: string): string[] {
  * Estimate keyword difficulty based on various factors
  * This is a simplified estimation - real SEO tools use backlink data, etc.
  */
-function estimateDifficulty(keyword: string, suggestions: string[]): number {
-  let difficulty = 50 // Base difficulty
+function estimateDifficulty(keyword: string, suggestions: string[], trendInterest: number): number {
+  let difficulty = 30 // Base difficulty
+  
+  // Higher trend interest = more competition
+  difficulty += Math.round(trendInterest * 0.4)
   
   // Longer keywords tend to be less competitive
   const wordCount = keyword.split(/\s+/).length
@@ -148,17 +152,22 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await getSupabaseServer()
 
+    // Get real Google Trends data
+    const trendData = await getGoogleTrends(keyword, 'IN')
+    
     // Get real suggestions from Google
     const suggestions = await getKeywordVariations(keyword)
     
     // Get additional question-based keywords
     const questions = generateQuestions(keyword)
     
-    // Estimate metrics
-    const difficulty = estimateDifficulty(keyword, suggestions)
-    const volume = estimateVolume(keyword, suggestions)
+    // Use real trend data for volume estimation
+    const volume = estimateVolumeFromTrend(trendData.interest, keyword)
     
-    // Determine opportunity
+    // Estimate difficulty with trend data
+    const difficulty = estimateDifficulty(keyword, suggestions, trendData.interest)
+    
+    // Determine opportunity based on real trend
     let opportunity: string
     if (difficulty < 30 && volume > 5000) {
       opportunity = 'High'
@@ -166,6 +175,8 @@ export async function GET(request: NextRequest) {
       opportunity = 'Medium'
     } else if (difficulty >= 70) {
       opportunity = 'Low'
+    } else if (trendData.trend === 'rising') {
+      opportunity = 'High' // Rising trends are good opportunities
     } else {
       opportunity = 'Medium'
     }
@@ -191,9 +202,10 @@ export async function GET(request: NextRequest) {
       volume,
       opportunity,
       metrics: {
-        estimatedCPC: `$${(Math.random() * 5 + 0.5).toFixed(2)}`,
+        estimatedCPC: `$${(Math.random() * 3 + 0.3).toFixed(2)}`,
         competition: difficulty > 60 ? 'High' : difficulty > 30 ? 'Medium' : 'Low',
-        trend: Math.random() > 0.5 ? 'Rising' : 'Stable',
+        trend: trendData.trend.charAt(0).toUpperCase() + trendData.trend.slice(1),
+        trendInterest: trendData.interest,
       }
     })
   } catch (error) {
